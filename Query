@@ -1,0 +1,108 @@
+DECLARE
+	@DAY VARCHAR(20),
+	@DAYLIKE VARCHAR(20),
+	@DAILYRUNNING VARCHAR(20)
+SET @DAY =  FORMAT(GETDATE(), 'dddd') 
+SET @DAYLIKE = '%'+@DAY+'%'
+SET @DAILYRUNNING = 'Every 1 day(s)'
+
+SELECT 
+	X.JobName,
+	X.RunDateTime,
+	X.DurationHHMMSS as Duration,
+	X.Status,
+	X.Scheduler
+FROM
+(
+	SELECT
+	j.name AS JobName,
+	CASE
+		WHEN msdb.dbo.agent_datetime(run_date, run_time) IS NULL THEN 'Running...'
+		ELSE CONVERT(VARCHAR,msdb.dbo.agent_datetime(run_date, run_time),120)
+		END AS 'RunDateTime',
+	CASE
+		WHEN h.run_duration is NULL THEN 'Running'
+		ELSE STUFF(STUFF(REPLACE(STR(h.run_duration,7,0),' ','0'),4,0,':'),7,0,':')
+		END AS DurationHHMMSS,
+	CASE 
+		 WHEN h.run_status=0 THEN 'Failed'
+	     WHEN h.run_status=1 THEN 'Succeeded'
+	     WHEN h.run_status=2 THEN 'Retry'
+	     WHEN h.run_status=3 THEN 'Cancelled'
+		 ELSE 'Running...'
+		 END AS Status,
+	REPLACE
+		(
+		 CASE WHEN l.freq_interval&1 = 1 THEN 'Sunday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&2 = 2 THEN 'Monday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&4 = 4 THEN 'Tuesday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&8 = 8 THEN 'Wednesday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&16 = 16 THEN 'Thursday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&32 = 32 THEN 'Friday, ' ELSE '' END
+		+CASE WHEN l.freq_interval&64 = 64 THEN 'Saturday, ' ELSE '' END
+		,', '
+		,''
+		) AS Scheduler
+	FROM msdb.dbo.sysjobs j 
+	LEFT JOIN 
+		(
+		SELECT DISTINCT
+			job_id,
+			run_date,
+			run_time,
+			run_duration,
+			run_status
+		FROM 
+			msdb.dbo.sysjobhistory 
+		WHERE run_date = CONVERT(VARCHAR,CAST(GETDATE() AS DATE),112)
+		)h ON j.job_id = h.job_id 
+	LEFT JOIN sysjobschedules k ON j.job_id = k.job_id
+	LEFT JOIN sysschedules l ON k.schedule_id = l.schedule_id
+	WHERE 
+		j.enabled = 1
+		AND l.freq_type = 8
+
+	UNION ALL
+
+	SELECT
+	j.name AS JobName,
+	CASE
+		WHEN msdb.dbo.agent_datetime(run_date, run_time) IS NULL THEN 'Running...'
+		ELSE CONVERT(VARCHAR,msdb.dbo.agent_datetime(run_date, run_time),120)
+		END AS 'RunDateTime',
+	CASE
+		WHEN h.run_duration is NULL THEN 'Running'
+		ELSE STUFF(STUFF(REPLACE(STR(h.run_duration,7,0),' ','0'),4,0,':'),7,0,':')
+		END AS DurationHHMMSS,
+	CASE 
+		 WHEN h.run_status=0 THEN 'Failed'
+	     WHEN h.run_status=1 THEN 'Succeeded'
+	     WHEN h.run_status=2 THEN 'Retry'
+	     WHEN h.run_status=3 THEN 'Cancelled'
+		 ELSE 'Running...'
+		 END AS Status,
+	'Every ' + CAST (freq_interval as varchar(3)) + ' day(s)'  Scheduler
+	FROM msdb.dbo.sysjobs j 
+	LEFT JOIN 
+		(
+		SELECT DISTINCT
+			job_id,
+			run_date,
+			run_time,
+			run_duration,
+			run_status
+		FROM 
+			msdb.dbo.sysjobhistory 
+		WHERE run_date = CONVERT(VARCHAR,CAST(GETDATE() AS DATE),112)
+		)h ON j.job_id = h.job_id 
+	LEFT JOIN sysjobschedules k ON j.job_id = k.job_id
+	LEFT JOIN sysschedules l ON k.schedule_id = l.schedule_id
+	WHERE 
+		j.enabled = 1
+		AND l.freq_type = 4
+	) AS X 
+WHERE
+	1=1
+	AND X.Scheduler Like @DAYLIKE
+	OR X.Scheduler = @DAILYRUNNING 
+	
